@@ -1,8 +1,3 @@
-# ============================================
-# PARTE 1: ENTRENAMIENTO EN PYTHON
-# Archivo: train_vit.py
-# ============================================
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -103,12 +98,10 @@ class VisionTransformer(nn.Module):
         return x
 
 def train_model():
-    # Hiperparámetros
     BATCH_SIZE = 128
     EPOCHS = 10 
     LR = 0.001
     
-    # Datos
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.1307,), (0.3081,))
@@ -120,14 +113,12 @@ def train_model():
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE)
     
-    # Modelo
     model = VisionTransformer().to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=LR)
     
     print(f"Total parámetros: {sum(p.numel() for p in model.parameters()):,}")
     
-    # Entrenamiento
     best_acc = 0
     for epoch in range(EPOCHS):
         model.train()
@@ -150,7 +141,6 @@ def train_model():
             
             pbar.set_postfix({'loss': f'{loss.item():.4f}'})
         
-        # Evaluación
         model.eval()
         test_correct = 0
         with torch.no_grad():
@@ -168,22 +158,19 @@ def train_model():
         if test_acc > best_acc:
             best_acc = test_acc
             torch.save(model.state_dict(), 'vit_mnist_best.pth')
-            print(f'Mejor modelo guardado! Acc: {best_acc:.2f}%')
     
-    # Guardar pesos en formato simple para C++
     save_weights_for_cpp(model)
     
     return model
 
 def save_weights_for_cpp(model):
-    """Guarda los pesos en formato legible para C++"""
+ 
     model.eval()
     weights = {}
     
     for name, param in model.named_parameters():
         weights[name] = param.cpu().detach().numpy().tolist()
     
-    # Guardar configuración
     config = {
         'img_size': 28,
         'patch_size': 4,
@@ -198,17 +185,9 @@ def save_weights_for_cpp(model):
     
     print("Pesos guardados en model_weights.json")
     
-    # También guardar en formato binario más eficiente
     np.savez_compressed('model_weights.npz', **{k: np.array(v) for k, v in weights.items()})
-    print("Pesos guardados en model_weights.npz")
-
+   
 if __name__ == '__main__':
     model = train_model()
     w = model.state_dict()["blocks.0.mlp.2.weight"]
-    print("PYTORCH SHAPE:", w.shape)
-    print("\n✓ Entrenamiento completado!")
-    print("✓ Archivos generados:")
-    print("  - vit_mnist_best.pth (checkpoint PyTorch)")
-    print("  - model_weights.json (para C++)")
-    print("  - model_weights.npz (binario comprimido)")
     print(model)

@@ -1,6 +1,3 @@
-// vit_inference_fixed.cpp - VERSIÓN CORREGIDA
-// Compilar: g++ -std=c++17 -O3 vit_inference_fixed.cpp -o vit_inference
-// Requiere: nlohmann/json.hpp
 
 #include "json.hpp"
 #include <algorithm>
@@ -15,9 +12,6 @@
 using json = nlohmann::json;
 using namespace std;
 
-// ============================================
-// CLASE TENSOR
-// ============================================
 class Tensor {
 public:
   vector<float> data;
@@ -47,11 +41,7 @@ public:
   }
 };
 
-// ============================================
-// OPERACIONES MATEMÁTICAS
-// ============================================
-
-Tensor matmul(const Tensor &A, const Tensor &B) {
+Tensor multipl(const Tensor &A, const Tensor &B) {
   int m = A.shape[0], k = A.shape[1], n = B.shape[1];
   Tensor C({m, n});
 
@@ -159,7 +149,6 @@ private:
     return t;
   }
 
-  // Multi-Head Attention
   Tensor multihead_attention(Tensor &x, int block_idx) {
     string prefix = "blocks." + to_string(block_idx) + ".attn.";
 
@@ -169,14 +158,12 @@ private:
 
     Tensor qkv_weight =
         reshape_weight(weights[prefix + "qkv.weight"], {3 * d, d});
-    Tensor qkv_weight_T = transpose(qkv_weight); // [d, 3*d]
+    Tensor qkv_weight_T = transpose(qkv_weight);
     vector<float> &qkv_bias = weights[prefix + "qkv.bias"];
 
-    // QKV projection: x @ W^T + b -> [seq_len, 3*d]
-    Tensor qkv = matmul(x, qkv_weight_T);
+    Tensor qkv = multipl(x, qkv_weight_T);
     add_bias(qkv, qkv_bias);
 
-    // Separar Q, K, V: cada uno es [seq_len, d]
     Tensor q({seq_len, d}), k({seq_len, d}), v({seq_len, d});
 
     for (int i = 0; i < seq_len; i++) {
@@ -187,12 +174,11 @@ private:
       }
     }
 
-    // Attention para cada head
     Tensor output({seq_len, d});
     output.data.assign(output.size(), 0.0f);
 
     for (int h = 0; h < num_heads; h++) {
-      // Q * K^T / sqrt(head_dim)
+
       Tensor attn_scores({seq_len, seq_len});
       float scale = 1.0f / sqrt((float)head_dim);
 
@@ -223,13 +209,12 @@ private:
       }
     }
 
-    // Output projection
     Tensor proj_weight =
         reshape_weight(weights[prefix + "proj.weight"], {d, d});
     Tensor proj_weight_T = transpose(proj_weight);
     vector<float> &proj_bias = weights[prefix + "proj.bias"];
 
-    Tensor out = matmul(output, proj_weight_T);
+    Tensor out = multipl(output, proj_weight_T);
     add_bias(out, proj_bias);
 
     return out;
@@ -241,23 +226,21 @@ private:
     int d = x.shape[1];
     int mlp_hidden = d * 4;
 
-    // FC1: x @ W1^T + b1
     Tensor fc1_weight =
         reshape_weight(weights[prefix + "0.weight"], {mlp_hidden, d});
     Tensor fc1_weight_T = transpose(fc1_weight);
     vector<float> &fc1_bias = weights[prefix + "0.bias"];
 
-    Tensor h = matmul(x, fc1_weight_T);
+    Tensor h = multipl(x, fc1_weight_T);
     add_bias(h, fc1_bias);
     gelu(h);
 
-    // FC2: h @ W2^T + b2
     Tensor fc2_weight =
         reshape_weight(weights[prefix + "2.weight"], {d, mlp_hidden});
     Tensor fc2_weight_T = transpose(fc2_weight);
     vector<float> &fc2_bias = weights[prefix + "2.bias"];
 
-    Tensor out = matmul(h, fc2_weight_T);
+    Tensor out = multipl(h, fc2_weight_T);
     add_bias(out, fc2_bias);
 
     return out;
@@ -297,18 +280,9 @@ public:
       return result;
     };
 
-    // Cargar todos los pesos
     for (auto &[key, value] : j["weights"].items()) {
       weights[key] = flatten(value);
     }
-
-    cout << "✓ Pesos cargados: " << weights.size() << " tensores" << endl;
-
-    // Debug: verificar dimensiones críticas
-    cout << "  - qkv.weight[0]: " << weights["blocks.0.attn.qkv.weight"].size()
-         << " (esperado: " << 3 * embed_dim * embed_dim << ")" << endl;
-    cout << "  - qkv.bias[0]: " << weights["blocks.0.attn.qkv.bias"].size()
-         << " (esperado: " << 3 * embed_dim << ")" << endl;
 
     return true;
   }
@@ -316,8 +290,6 @@ public:
   Tensor patch_embedding(const vector<float> &image) {
     Tensor patches({num_patches, embed_dim});
 
-    // Conv2d weight en PyTorch: [out_channels, in_channels, kernel_h, kernel_w]
-    // Nuestro caso: [64, 1, 4, 4]
     vector<float> &conv_weight = weights["patch_embed.proj.weight"];
     vector<float> &conv_bias = weights["patch_embed.proj.bias"];
 
@@ -330,15 +302,12 @@ public:
         for (int out_ch = 0; out_ch < embed_dim; out_ch++) {
           float sum = conv_bias[out_ch];
 
-          // Convolución: weight[out_ch][in_ch=0][i][j] * input[row][col]
           for (int i = 0; i < patch_size; i++) {
             for (int j = 0; j < patch_size; j++) {
               int img_row = p_row * patch_size + i;
               int img_col = p_col * patch_size + j;
               int img_idx = img_row * img_size + img_col;
 
-              // Index en peso: [out_ch, 0, i, j]
-              // Flattened: out_ch * (1*4*4) + 0*(4*4) + i*4 + j
               int weight_idx =
                   out_ch * (patch_size * patch_size) + i * patch_size + j;
 
@@ -355,10 +324,8 @@ public:
   }
 
   vector<float> forward(const vector<float> &image) {
-    // 1. Patch Embedding
     Tensor patches = patch_embedding(image);
 
-    // 2. Add CLS token
     vector<float> &cls_token_data = weights["cls_token"];
     Tensor x({num_patches + 1, embed_dim});
 
@@ -372,7 +339,6 @@ public:
       }
     }
 
-    // 3. Add positional embedding
     vector<float> &pos_embed = weights["pos_embed"];
     for (int i = 0; i < num_patches + 1; i++) {
       for (int j = 0; j < embed_dim; j++) {
@@ -380,43 +346,35 @@ public:
       }
     }
 
-    // 4. Transformer blocks
     for (int block_idx = 0; block_idx < depth; block_idx++) {
       string prefix = "blocks." + to_string(block_idx) + ".";
 
-      // LayerNorm 1
       Tensor x_norm = x;
       layer_norm(x_norm, weights[prefix + "norm1.weight"],
                  weights[prefix + "norm1.bias"]);
 
-      // Attention + residual
       Tensor attn_out = multihead_attention(x_norm, block_idx);
       for (int i = 0; i < x.size(); i++) {
         x.data[i] += attn_out.data[i];
       }
 
-      // LayerNorm 2
       x_norm = x;
       layer_norm(x_norm, weights[prefix + "norm2.weight"],
                  weights[prefix + "norm2.bias"]);
 
-      // MLP + residual
       Tensor mlp_out = mlp(x_norm, block_idx);
       for (int i = 0; i < x.size(); i++) {
         x.data[i] += mlp_out.data[i];
       }
     }
 
-    // 5. Final LayerNorm
     layer_norm(x, weights["norm.weight"], weights["norm.bias"]);
 
-    // 6. Classification head (solo CLS token)
     vector<float> cls_output(embed_dim);
     for (int j = 0; j < embed_dim; j++) {
       cls_output[j] = x(0, j);
     }
 
-    // Linear: cls @ head_weight^T + head_bias
     Tensor head_weight =
         reshape_weight(weights["head.weight"], {num_classes, embed_dim});
     Tensor head_weight_T = transpose(head_weight);
