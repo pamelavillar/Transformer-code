@@ -1,4 +1,3 @@
-
 #include "json.hpp"
 #include <algorithm>
 #include <cmath>
@@ -14,159 +13,156 @@ using namespace std;
 
 class Tensor {
 public:
-  vector<float> data;
-  vector<int> shape;
+  vector<float> datos;
+  vector<int> forma;
 
   Tensor() {}
-  Tensor(vector<int> s) : shape(s) {
-    int size = 1;
-    for (int dim : s)
-      size *= dim;
-    data.resize(size, 0.0f);
+  Tensor(vector<int> f) : forma(f) {
+    int tam = 1;
+    for (int dim : f)
+      tam *= dim;
+    datos.resize(tam, 0.0f);
   }
 
-  int size() const {
-    int s = 1;
-    for (int dim : shape)
-      s *= dim;
-    return s;
+  int tamano() const {
+    int t = 1;
+    for (int dim : forma)
+      t *= dim;
+    return t;
   }
 
-  float &operator()(int i, int j) { return data[i * shape[1] + j]; }
+  float &operator()(int i, int j) { return datos[i * forma[1] + j]; }
 
-  const float &operator()(int i, int j) const { return data[i * shape[1] + j]; }
+  const float &operator()(int i, int j) const {
+    return datos[i * forma[1] + j];
+  }
 
   float &at(int i, int j, int k) {
-    return data[i * shape[1] * shape[2] + j * shape[2] + k];
+    return datos[i * forma[1] * forma[2] + j * forma[2] + k];
   }
 };
 
-Tensor multipl(const Tensor &A, const Tensor &B) {
-  int m = A.shape[0], k = A.shape[1], n = B.shape[1];
+Tensor multiplicar(const Tensor &A, const Tensor &B) {
+  int m = A.forma[0], k = A.forma[1], n = B.forma[1];
   Tensor C({m, n});
 
   for (int i = 0; i < m; i++) {
     for (int j = 0; j < n; j++) {
-      float sum = 0.0f;
+      float suma = 0.0f;
       for (int p = 0; p < k; p++) {
-        sum += A(i, p) * B(p, j);
+        suma += A(i, p) * B(p, j);
       }
-      C(i, j) = sum;
+      C(i, j) = suma;
     }
   }
   return C;
 }
 
-Tensor transpose(const Tensor &A) {
-  Tensor B({A.shape[1], A.shape[0]});
-  for (int i = 0; i < A.shape[0]; i++) {
-    for (int j = 0; j < A.shape[1]; j++) {
+Tensor transponer(const Tensor &A) {
+  Tensor B({A.forma[1], A.forma[0]});
+  for (int i = 0; i < A.forma[0]; i++) {
+    for (int j = 0; j < A.forma[1]; j++) {
       B(j, i) = A(i, j);
     }
   }
   return B;
 }
 
-void add_bias(Tensor &x, const vector<float> &bias) {
-  for (int i = 0; i < x.shape[0]; i++) {
-    for (int j = 0; j < x.shape[1]; j++) {
-      x(i, j) += bias[j];
+void sumar_sesgo(Tensor &x, const vector<float> &sesgo) {
+  for (int i = 0; i < x.forma[0]; i++) {
+    for (int j = 0; j < x.forma[1]; j++) {
+      x(i, j) += sesgo[j];
     }
   }
 }
 
-void softmax_rows(Tensor &x) {
-  for (int i = 0; i < x.shape[0]; i++) {
+void softmax_filas(Tensor &x) {
+  for (int i = 0; i < x.forma[0]; i++) {
     float max_val = x(i, 0);
-    for (int j = 1; j < x.shape[1]; j++) {
+    for (int j = 1; j < x.forma[1]; j++) {
       max_val = max(max_val, x(i, j));
     }
 
-    float sum = 0.0f;
-    for (int j = 0; j < x.shape[1]; j++) {
+    float suma = 0.0f;
+    for (int j = 0; j < x.forma[1]; j++) {
       x(i, j) = exp(x(i, j) - max_val);
-      sum += x(i, j);
+      suma += x(i, j);
     }
 
-    for (int j = 0; j < x.shape[1]; j++) {
-      x(i, j) /= sum;
+    for (int j = 0; j < x.forma[1]; j++) {
+      x(i, j) /= suma;
     }
   }
 }
 
 void gelu(Tensor &x) {
-  for (auto &val : x.data) {
+  for (auto &val : x.datos) {
     val = 0.5f * val *
           (1.0f + tanh(sqrt(2.0f / M_PI) * (val + 0.044715f * pow(val, 3))));
   }
 }
 
-void layer_norm(Tensor &x, const vector<float> &gamma,
-                const vector<float> &beta, float eps = 1e-5f) {
-  int seq_len = x.shape[0];
-  int dim = x.shape[1];
+void normalizacion_capa(Tensor &x, const vector<float> &gamma,
+                        const vector<float> &beta, float eps = 1e-5f) {
+  int long_sec = x.forma[0];
+  int dim = x.forma[1];
 
-  for (int i = 0; i < seq_len; i++) {
-    float mean = 0.0f;
+  for (int i = 0; i < long_sec; i++) {
+    float media = 0.0f;
     for (int j = 0; j < dim; j++) {
-      mean += x(i, j);
+      media += x(i, j);
     }
-    mean /= dim;
+    media /= dim;
 
-    float var = 0.0f;
+    float varianza = 0.0f;
     for (int j = 0; j < dim; j++) {
-      float diff = x(i, j) - mean;
-      var += diff * diff;
+      float dif = x(i, j) - media;
+      varianza += dif * dif;
     }
-    var /= dim;
+    varianza /= dim;
 
-    float std_inv = 1.0f / sqrt(var + eps);
+    float inv_std = 1.0f / sqrt(varianza + eps);
     for (int j = 0; j < dim; j++) {
-      x(i, j) = gamma[j] * (x(i, j) - mean) * std_inv + beta[j];
+      x(i, j) = gamma[j] * (x(i, j) - media) * inv_std + beta[j];
     }
   }
 }
 
-// ============================================
-// VISION TRANSFORMER
-// ============================================
-
 class VisionTransformer {
 private:
-  int img_size = 28;
-  int patch_size = 4;
-  int embed_dim = 64;
-  int num_heads = 4;
-  int depth = 4;
-  int num_classes = 10;
-  int num_patches;
+  int tam_imagen = 28;
+  int tam_parche = 4;
+  int dim_incrustacion = 64;
+  int num_cabezas = 4;
+  int profundidad = 4;
+  int num_clases = 10;
+  int num_parches;
 
-  map<string, vector<float>> weights;
+  map<string, vector<float>> pesos;
 
-  Tensor reshape_weight(const vector<float> &w, vector<int> shape) {
-    Tensor t(shape);
-    t.data = w;
+  Tensor reformar_peso(const vector<float> &w, vector<int> forma) {
+    Tensor t(forma);
+    t.datos = w;
     return t;
   }
 
-  Tensor multihead_attention(Tensor &x, int block_idx) {
-    string prefix = "blocks." + to_string(block_idx) + ".attn.";
+  Tensor atencion_multicabeza(Tensor &x, int idx_bloque) {
+    string prefijo = "blocks." + to_string(idx_bloque) + ".attn.";
 
-    int seq_len = x.shape[0];
-    int d = x.shape[1];
-    int head_dim = d / num_heads;
+    int long_sec = x.forma[0];
+    int d = x.forma[1];
+    int dim_cabeza = d / num_cabezas;
 
-    Tensor qkv_weight =
-        reshape_weight(weights[prefix + "qkv.weight"], {3 * d, d});
-    Tensor qkv_weight_T = transpose(qkv_weight);
-    vector<float> &qkv_bias = weights[prefix + "qkv.bias"];
+    Tensor peso_qkv = reformar_peso(pesos[prefijo + "qkv.weight"], {3 * d, d});
+    Tensor peso_qkv_T = transponer(peso_qkv);
+    vector<float> &sesgo_qkv = pesos[prefijo + "qkv.bias"];
 
-    Tensor qkv = multipl(x, qkv_weight_T);
-    add_bias(qkv, qkv_bias);
+    Tensor qkv = multiplicar(x, peso_qkv_T);
+    sumar_sesgo(qkv, sesgo_qkv);
 
-    Tensor q({seq_len, d}), k({seq_len, d}), v({seq_len, d});
+    Tensor q({long_sec, d}), k({long_sec, d}), v({long_sec, d});
 
-    for (int i = 0; i < seq_len; i++) {
+    for (int i = 0; i < long_sec; i++) {
       for (int j = 0; j < d; j++) {
         q(i, j) = qkv(i, j);         // primeros d elementos
         k(i, j) = qkv(i, j + d);     // siguientes d elementos
@@ -174,226 +170,226 @@ private:
       }
     }
 
-    Tensor output({seq_len, d});
-    output.data.assign(output.size(), 0.0f);
+    Tensor salida({long_sec, d});
+    salida.datos.assign(salida.tamano(), 0.0f);
 
-    for (int h = 0; h < num_heads; h++) {
+    for (int cabeza = 0; cabeza < num_cabezas; cabeza++) {
 
-      Tensor attn_scores({seq_len, seq_len});
-      float scale = 1.0f / sqrt((float)head_dim);
+      Tensor puntajes_atencion({long_sec, long_sec});
+      float escala = 1.0f / sqrt((float)dim_cabeza);
 
-      for (int i = 0; i < seq_len; i++) {
-        for (int j = 0; j < seq_len; j++) {
-          float sum = 0.0f;
-          for (int d_idx = 0; d_idx < head_dim; d_idx++) {
-            int q_idx = h * head_dim + d_idx;
-            int k_idx = h * head_dim + d_idx;
-            sum += q(i, q_idx) * k(j, k_idx);
+      for (int i = 0; i < long_sec; i++) {
+        for (int j = 0; j < long_sec; j++) {
+          float suma = 0.0f;
+          for (int idx_dim = 0; idx_dim < dim_cabeza; idx_dim++) {
+            int idx_q = cabeza * dim_cabeza + idx_dim;
+            int idx_k = cabeza * dim_cabeza + idx_dim;
+            suma += q(i, idx_q) * k(j, idx_k);
           }
-          attn_scores(i, j) = sum * scale;
+          puntajes_atencion(i, j) = suma * escala;
         }
       }
 
-      softmax_rows(attn_scores);
+      softmax_filas(puntajes_atencion);
 
-      // Attn * V
-      for (int i = 0; i < seq_len; i++) {
-        for (int d_idx = 0; d_idx < head_dim; d_idx++) {
-          float sum = 0.0f;
-          for (int j = 0; j < seq_len; j++) {
-            int v_idx = h * head_dim + d_idx;
-            sum += attn_scores(i, j) * v(j, v_idx);
+      // Atención * V
+      for (int i = 0; i < long_sec; i++) {
+        for (int idx_dim = 0; idx_dim < dim_cabeza; idx_dim++) {
+          float suma = 0.0f;
+          for (int j = 0; j < long_sec; j++) {
+            int idx_v = cabeza * dim_cabeza + idx_dim;
+            suma += puntajes_atencion(i, j) * v(j, idx_v);
           }
-          output(i, h * head_dim + d_idx) = sum;
+          salida(i, cabeza * dim_cabeza + idx_dim) = suma;
         }
       }
     }
 
-    Tensor proj_weight =
-        reshape_weight(weights[prefix + "proj.weight"], {d, d});
-    Tensor proj_weight_T = transpose(proj_weight);
-    vector<float> &proj_bias = weights[prefix + "proj.bias"];
+    Tensor peso_proy = reformar_peso(pesos[prefijo + "proj.weight"], {d, d});
+    Tensor peso_proy_T = transponer(peso_proy);
+    vector<float> &sesgo_proy = pesos[prefijo + "proj.bias"];
 
-    Tensor out = multipl(output, proj_weight_T);
-    add_bias(out, proj_bias);
+    Tensor salida_final = multiplicar(salida, peso_proy_T);
+    sumar_sesgo(salida_final, sesgo_proy);
 
-    return out;
+    return salida_final;
   }
 
-  Tensor mlp(Tensor &x, int block_idx) {
-    string prefix = "blocks." + to_string(block_idx) + ".mlp.";
+  Tensor red_mlp(Tensor &x, int idx_bloque) {
+    string prefijo = "blocks." + to_string(idx_bloque) + ".mlp.";
 
-    int d = x.shape[1];
-    int mlp_hidden = d * 4;
+    int d = x.forma[1];
+    int dim_oculta_mlp = d * 4;
 
-    Tensor fc1_weight =
-        reshape_weight(weights[prefix + "0.weight"], {mlp_hidden, d});
-    Tensor fc1_weight_T = transpose(fc1_weight);
-    vector<float> &fc1_bias = weights[prefix + "0.bias"];
+    Tensor peso_fc1 =
+        reformar_peso(pesos[prefijo + "0.weight"], {dim_oculta_mlp, d});
+    Tensor peso_fc1_T = transponer(peso_fc1);
+    vector<float> &sesgo_fc1 = pesos[prefijo + "0.bias"];
 
-    Tensor h = multipl(x, fc1_weight_T);
-    add_bias(h, fc1_bias);
+    Tensor h = multiplicar(x, peso_fc1_T);
+    sumar_sesgo(h, sesgo_fc1);
     gelu(h);
 
-    Tensor fc2_weight =
-        reshape_weight(weights[prefix + "2.weight"], {d, mlp_hidden});
-    Tensor fc2_weight_T = transpose(fc2_weight);
-    vector<float> &fc2_bias = weights[prefix + "2.bias"];
+    Tensor peso_fc2 =
+        reformar_peso(pesos[prefijo + "2.weight"], {d, dim_oculta_mlp});
+    Tensor peso_fc2_T = transponer(peso_fc2);
+    vector<float> &sesgo_fc2 = pesos[prefijo + "2.bias"];
 
-    Tensor out = multipl(h, fc2_weight_T);
-    add_bias(out, fc2_bias);
+    Tensor salida = multiplicar(h, peso_fc2_T);
+    sumar_sesgo(salida, sesgo_fc2);
 
-    return out;
+    return salida;
   }
 
 public:
   VisionTransformer() {
-    num_patches = (img_size / patch_size) * (img_size / patch_size);
+    num_parches = (tam_imagen / tam_parche) * (tam_imagen / tam_parche);
   }
 
-  bool load_weights(const string &filepath) {
-    ifstream file(filepath);
-    if (!file.is_open()) {
-      cerr << "Error: no se puede abrir " << filepath << endl;
+  bool cargar_pesos(const string &ruta) {
+    ifstream archivo(ruta);
+    if (!archivo.is_open()) {
+      cerr << "Error: no se puede abrir " << ruta << endl;
       return false;
     }
 
     json j;
-    file >> j;
+    archivo >> j;
 
     auto config = j["config"];
-    embed_dim = config["embed_dim"];
-    depth = config["depth"];
-    num_heads = config["num_heads"];
+    dim_incrustacion = config["embed_dim"];
+    profundidad = config["depth"];
+    num_cabezas = config["num_heads"];
 
-    function<vector<float>(const json &)> flatten =
+    function<vector<float>(const json &)> aplanar =
         [&](const json &arr) -> vector<float> {
-      vector<float> result;
+      vector<float> resultado;
       if (arr.is_number()) {
-        result.push_back(arr.get<float>());
+        resultado.push_back(arr.get<float>());
       } else if (arr.is_array()) {
         for (const auto &item : arr) {
-          auto sub = flatten(item);
-          result.insert(result.end(), sub.begin(), sub.end());
+          auto sub = aplanar(item);
+          resultado.insert(resultado.end(), sub.begin(), sub.end());
         }
       }
-      return result;
+      return resultado;
     };
 
-    for (auto &[key, value] : j["weights"].items()) {
-      weights[key] = flatten(value);
+    for (auto &[clave, valor] : j["weights"].items()) {
+      pesos[clave] = aplanar(valor);
     }
 
     return true;
   }
 
-  Tensor patch_embedding(const vector<float> &image) {
-    Tensor patches({num_patches, embed_dim});
+  Tensor incrustacion_parches(const vector<float> &imagen) {
+    Tensor parches({num_parches, dim_incrustacion});
 
-    vector<float> &conv_weight = weights["patch_embed.proj.weight"];
-    vector<float> &conv_bias = weights["patch_embed.proj.bias"];
+    vector<float> &peso_conv = pesos["patch_embed.proj.weight"];
+    vector<float> &sesgo_conv = pesos["patch_embed.proj.bias"];
 
-    int n_patches_side = img_size / patch_size;
+    int parches_por_lado = tam_imagen / tam_parche;
 
-    for (int p_row = 0; p_row < n_patches_side; p_row++) {
-      for (int p_col = 0; p_col < n_patches_side; p_col++) {
-        int patch_idx = p_row * n_patches_side + p_col;
+    for (int fila_parche = 0; fila_parche < parches_por_lado; fila_parche++) {
+      for (int col_parche = 0; col_parche < parches_por_lado; col_parche++) {
+        int idx_parche = fila_parche * parches_por_lado + col_parche;
 
-        for (int out_ch = 0; out_ch < embed_dim; out_ch++) {
-          float sum = conv_bias[out_ch];
+        for (int canal_salida = 0; canal_salida < dim_incrustacion;
+             canal_salida++) {
+          float suma = sesgo_conv[canal_salida];
 
-          for (int i = 0; i < patch_size; i++) {
-            for (int j = 0; j < patch_size; j++) {
-              int img_row = p_row * patch_size + i;
-              int img_col = p_col * patch_size + j;
-              int img_idx = img_row * img_size + img_col;
+          for (int i = 0; i < tam_parche; i++) {
+            for (int j = 0; j < tam_parche; j++) {
+              int fila_img = fila_parche * tam_parche + i;
+              int col_img = col_parche * tam_parche + j;
+              int idx_img = fila_img * tam_imagen + col_img;
 
-              int weight_idx =
-                  out_ch * (patch_size * patch_size) + i * patch_size + j;
+              int idx_peso =
+                  canal_salida * (tam_parche * tam_parche) + i * tam_parche + j;
 
-              sum += image[img_idx] * conv_weight[weight_idx];
+              suma += imagen[idx_img] * peso_conv[idx_peso];
             }
           }
 
-          patches(patch_idx, out_ch) = sum;
+          parches(idx_parche, canal_salida) = suma;
         }
       }
     }
 
-    return patches;
+    return parches;
   }
 
-  vector<float> forward(const vector<float> &image) {
-    Tensor patches = patch_embedding(image);
+  vector<float> propagar(const vector<float> &imagen) {
+    Tensor parches = incrustacion_parches(imagen);
 
-    vector<float> &cls_token_data = weights["cls_token"];
-    Tensor x({num_patches + 1, embed_dim});
+    vector<float> &token_cls = pesos["cls_token"];
+    Tensor x({num_parches + 1, dim_incrustacion});
 
-    for (int j = 0; j < embed_dim; j++) {
-      x(0, j) = cls_token_data[j];
+    for (int j = 0; j < dim_incrustacion; j++) {
+      x(0, j) = token_cls[j];
     }
 
-    for (int i = 0; i < num_patches; i++) {
-      for (int j = 0; j < embed_dim; j++) {
-        x(i + 1, j) = patches(i, j);
+    for (int i = 0; i < num_parches; i++) {
+      for (int j = 0; j < dim_incrustacion; j++) {
+        x(i + 1, j) = parches(i, j);
       }
     }
 
-    vector<float> &pos_embed = weights["pos_embed"];
-    for (int i = 0; i < num_patches + 1; i++) {
-      for (int j = 0; j < embed_dim; j++) {
-        x(i, j) += pos_embed[i * embed_dim + j];
+    vector<float> &incrust_pos = pesos["pos_embed"];
+    for (int i = 0; i < num_parches + 1; i++) {
+      for (int j = 0; j < dim_incrustacion; j++) {
+        x(i, j) += incrust_pos[i * dim_incrustacion + j];
       }
     }
 
-    for (int block_idx = 0; block_idx < depth; block_idx++) {
-      string prefix = "blocks." + to_string(block_idx) + ".";
+    for (int idx_bloque = 0; idx_bloque < profundidad; idx_bloque++) {
+      string prefijo = "blocks." + to_string(idx_bloque) + ".";
 
       Tensor x_norm = x;
-      layer_norm(x_norm, weights[prefix + "norm1.weight"],
-                 weights[prefix + "norm1.bias"]);
+      normalizacion_capa(x_norm, pesos[prefijo + "norm1.weight"],
+                         pesos[prefijo + "norm1.bias"]);
 
-      Tensor attn_out = multihead_attention(x_norm, block_idx);
-      for (int i = 0; i < x.size(); i++) {
-        x.data[i] += attn_out.data[i];
+      Tensor salida_atn = atencion_multicabeza(x_norm, idx_bloque);
+      for (int i = 0; i < x.tamano(); i++) {
+        x.datos[i] += salida_atn.datos[i];
       }
 
       x_norm = x;
-      layer_norm(x_norm, weights[prefix + "norm2.weight"],
-                 weights[prefix + "norm2.bias"]);
+      normalizacion_capa(x_norm, pesos[prefijo + "norm2.weight"],
+                         pesos[prefijo + "norm2.bias"]);
 
-      Tensor mlp_out = mlp(x_norm, block_idx);
-      for (int i = 0; i < x.size(); i++) {
-        x.data[i] += mlp_out.data[i];
+      Tensor salida_mlp = red_mlp(x_norm, idx_bloque);
+      for (int i = 0; i < x.tamano(); i++) {
+        x.datos[i] += salida_mlp.datos[i];
       }
     }
 
-    layer_norm(x, weights["norm.weight"], weights["norm.bias"]);
+    normalizacion_capa(x, pesos["norm.weight"], pesos["norm.bias"]);
 
-    vector<float> cls_output(embed_dim);
-    for (int j = 0; j < embed_dim; j++) {
-      cls_output[j] = x(0, j);
+    vector<float> salida_cls(dim_incrustacion);
+    for (int j = 0; j < dim_incrustacion; j++) {
+      salida_cls[j] = x(0, j);
     }
 
-    Tensor head_weight =
-        reshape_weight(weights["head.weight"], {num_classes, embed_dim});
-    Tensor head_weight_T = transpose(head_weight);
-    vector<float> &head_bias = weights["head.bias"];
+    Tensor peso_cabeza =
+        reformar_peso(pesos["head.weight"], {num_clases, dim_incrustacion});
+    Tensor peso_cabeza_T = transponer(peso_cabeza);
+    vector<float> &sesgo_cabeza = pesos["head.bias"];
 
-    vector<float> logits(num_classes, 0.0f);
-    for (int i = 0; i < num_classes; i++) {
-      float sum = head_bias[i];
-      for (int j = 0; j < embed_dim; j++) {
-        sum += cls_output[j] * head_weight_T(j, i);
+    vector<float> logits(num_clases, 0.0f);
+    for (int i = 0; i < num_clases; i++) {
+      float suma = sesgo_cabeza[i];
+      for (int j = 0; j < dim_incrustacion; j++) {
+        suma += salida_cls[j] * peso_cabeza_T(j, i);
       }
-      logits[i] = sum;
+      logits[i] = suma;
     }
 
     return logits;
   }
 
-  int predict(const vector<float> &image) {
-    auto logits = forward(image);
+  int predecir(const vector<float> &imagen) {
+    auto logits = propagar(imagen);
     /*cout << "\nLogits: ";
     for (int i = 0; i < logits.size(); i++) {
         cout << i << "=" << logits[i] << " ";

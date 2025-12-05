@@ -35,7 +35,7 @@ int main() {
   cout << "Test Vision Transformer - MNIST Real" << endl;
 
   VisionTransformer model;
-  if (!model.load_weights("model_weights.json")) {
+  if (!model.cargar_pesos("model_weights.json")) {
     return 1;
   }
 
@@ -63,7 +63,7 @@ int main() {
       cout << endl;
     }
 
-    int predicted = model.predict(image);
+    int predicted = model.predecir(image);
 
     total++;
     if (predicted == true_label)
